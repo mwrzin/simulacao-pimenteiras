@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <title>Craqueamento Térmico: Bacia do Parnaíba</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <style>
+      body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+      .a-enter-vr { display: none; } 
+      
+      /* HUD Overlay Moderno */
+      #hud-container {
+        position: absolute; top: 3vh; left: 50%; transform: translateX(-50%);
+        width: 90%; max-width: 600px; background: rgba(10, 15, 25, 0.7);
+        border: 1px solid rgba(74, 144, 226, 0.4); border-radius: 20px; padding: 20px 24px;
+        color: white; text-align: center; z-index: 1000;
+        backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        pointer-events: none; transition: all 0.5s ease;
+      }
+      #hud-title { margin: 0 0 10px 0; font-size: 22px; color: #64ffda; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+      #hud-desc { margin: 0; font-size: 16px; color: #e2e8f0; line-height: 1.6; font-weight: 400; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+
+      /* Formula de Arrhenius */
+      #arrhenius-ui {
+        position: absolute; top: 22vh; left: 50%; transform: translateX(-50%);
+        background: rgba(20, 10, 0, 0.8); border: 2px solid #ff7700; border-radius: 12px;
+        padding: 12px 25px; color: #ff9900; font-family: 'Courier New', Courier, monospace; font-size: 20px;
+        z-index: 1000; display: none; font-weight: bold; white-space: nowrap;
+        animation: pulseGlow 1.2s infinite alternate; pointer-events: none;
+        box-shadow: 0 0 20px rgba(255, 100, 0, 0.6);
+      }
+      @keyframes pulseGlow {
+        from { box-shadow: 0 0 15px rgba(255, 120, 0, 0.6); border-color: #ff8800; transform: translateX(-50%) scale(1); }
+        to { box-shadow: 0 0 35px rgba(255, 60, 0, 0.9); border-color: #ff3300; color: #ffcc66; transform: translateX(-50%) scale(1.05); }
+      }
+
+      /* Slider de Temperatura */
+      #slider-container {
+        position: absolute; bottom: 6vh; left: 50%; transform: translateX(-50%);
+        width: 85%; max-width: 400px; background: rgba(15, 15, 20, 0.85);
+        border-radius: 20px; padding: 20px; text-align: center;
+        z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        border: 1px solid rgba(255, 85, 0, 0.3); display: none;
+        backdrop-filter: blur(8px);
+        animation: fadeInSlider 1s forwards;
+      }
+      #slider-container label {
+        display: block; color: #ff8833; font-weight: 700; margin-bottom: 15px;
+        text-transform: uppercase; font-size: 13px; letter-spacing: 1px;
+      }
+      input[type=range] {
+        -webkit-appearance: none; width: 100%; background: transparent; pointer-events: auto;
+      }
+      input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none; height: 28px; width: 28px; border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #ffcc00, #ff2200);
+        cursor: pointer; margin-top: -10px; box-shadow: 0 0 15px rgba(255, 60, 0, 0.8);
+        border: 2px solid #fff; transition: transform 0.1s;
+      }
+      input[type=range]::-webkit-slider-thumb:active {
+        transform: scale(1.15);
+      }
+      input[type=range]:disabled::-webkit-slider-thumb {
+        background: #555; box-shadow: 0 0 5px #222; border-color: #777; cursor: not-allowed;
+      }
+      input[type=range]::-webkit-slider-runnable-track {
+        width: 100%; height: 8px; cursor: pointer; background: #2a2a35; border-radius: 4px;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+      }
+      input[type=range]:focus { outline: none; }
+      @keyframes fadeInSlider { from { opacity: 0; transform: translate(-50%, 30px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    </style>
+    
+    <script>
+      // Magma Shader (Lava) - Melhorado para visual mais orgânico
+      AFRAME.registerShader("magma", {
+        schema: {
+          timeMsec: {type: "time", is: "uniform"},
+          color1: {type: "color", is: "uniform", default: "#ff1100"},
+          color2: {type: "color", is: "uniform", default: "#ffaa00"}
+        },
+        vertexShader: [
+          "varying vec2 vUv;",
+          "void main() {",
+          "  vUv = uv;",
+          "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+          "}"
+        ].join("\n"),
+        fragmentShader: [
+          "varying vec2 vUv;",
+          "uniform float timeMsec;",
+          "uniform vec3 color1;",
+          "uniform vec3 color2;",
+          "float random(vec2 st) {",
+          "  return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);",
+          "}",
+          "float noise(vec2 p) {",
+          "  vec2 ip = floor(p);",
+          "  vec2 u = fract(p);",
+          "  u = u*u*(3.0-2.0*u);",
+          "  float res = mix(",
+          "    mix(random(ip), random(ip+vec2(1.0,0.0)), u.x),",
+          "    mix(random(ip+vec2(0.0,1.0)), random(ip+vec2(1.0,1.0)), u.x), u.y);",
+          "  return res*res;",
+          "}",
+          "void main() {",
+          "  float t = timeMsec * 0.0015;",
+          "  vec2 uv = vUv * 6.0;",
+          "  uv.y -= t * 0.4;",
+          "  float n = noise(uv + t * 0.3);",
+          "  n += 0.5 * noise(uv * 2.5 - t * 0.5);",
+          "  n += 0.25 * noise(uv * 5.0 + t * 0.2);",
+          "  vec3 finalColor = mix(color1, color2, smoothstep(0.2, 0.8, n));",
+          "  float pulse = sin(t * 2.5) * 0.15 + 0.85;",
+          "  gl_FragColor = vec4(finalColor * pulse, 1.0);",
+          "}"
+        ].join("\n")
+      });
+
+      // Sistema de Partículas Orgânicas (Fase 1) - Mais bonitinhas
+      AFRAME.registerComponent("organic-particles", {
+        init: function () {
+          this.particles = [];
+          for (let i = 0; i < 90; i++) {
+            // Usando dodecaedros para parecerem pequenas diatomáceas/algas em vez de esferas perfeitas
+            let p = document.createElement("a-dodecahedron");
+            p.setAttribute("radius", Math.random() * 0.05 + 0.02);
+            
+            // Paleta oceânica mais rica
+            const colors = ["#26a69a", "#66bb6a", "#4db6ac", "#81c784"];
+            p.setAttribute("color", colors[Math.floor(Math.random() * colors.length)]);
+            
+            p.setAttribute("material", "shader: standard; roughness: 0.3; metalness: 0.1; opacity: 0.85; transparent: true");
+            
+            let x = (Math.random() - 0.5) * 12; let y = Math.random() * 8 + 1; let z = (Math.random() - 0.5) * 8 - 4;
+            p.setAttribute("position", x + " " + y + " " + z);
+            
+            // Rotação inicial aleatória
+            p.setAttribute("rotation", (Math.random()*360) + " " + (Math.random()*360) + " " + (Math.random()*360));
+            
+            p.data = { 
+              startY: y, 
+              speed: Math.random() * 0.04 + 0.015,
+              rotSpeedX: (Math.random() - 0.5) * 50,
+              rotSpeedY: (Math.random() - 0.5) * 50
+            };
+            this.el.appendChild(p); this.particles.push(p);
+          }
+        },
+        tick: function (time, timeDelta) {
+          if (this.el.object3D.visible === false) return;
+          let dt = timeDelta / 1000;
+          this.particles.forEach(p => {
+            if(p.object3D) {
+              p.object3D.position.y -= p.data.speed * dt * 40;
+              // Adiciona uma leve rotação enquanto caem para ficar mais natural
+              p.object3D.rotation.x += p.data.rotSpeedX * dt * (Math.PI / 180);
+              p.object3D.rotation.y += p.data.rotSpeedY * dt * (Math.PI / 180);
+              
+              if (p.object3D.position.y < 0) {
+                p.object3D.position.y = 10;
+                p.object3D.position.x = (Math.random() - 0.5) * 12;
+              }
+            }
+          });
+        }
+      });
+
+      // Gerenciador Principal da Lógica
+      AFRAME.registerComponent("story-manager", {
+        init: function () {
+          this.phase = 1;
+          this.crackingActive = false;
+          this.coolingActive = false;
+          this.gasInterval = null;
+          
+          const next = this.nextPhase.bind(this);
+          window.addEventListener("click", next);
+          window.addEventListener("touchstart", next, {passive: true});
+          
+          this.hudTitle = document.getElementById("hud-title");
+          this.hudDesc = document.getElementById("hud-desc");
+          this.arrheniusUI = document.getElementById("arrhenius-ui");
+          this.sliderContainer = document.getElementById("slider-container");
+          this.tempSlider = document.getElementById("temp-slider");
+          
+          this.orgParticles = document.querySelector("#organic-system");
+          this.kerogenGroups = document.querySelectorAll(".shale-group");
+          this.kerogenBoxes = document.querySelectorAll(".kerogen-box");
+          this.magmaDike = document.querySelector("#magma-dike");
+          this.magmaLight = document.querySelector("#magma-light");
+          this.gasContainer = document.querySelector("#gas-container");
+          this.sky = document.querySelector("a-sky");
+          this.ambientLight = document.querySelector("#ambient-light");
+          this.dirLight = document.querySelector("#dir-light");
+          this.sceneEl = document.querySelector("a-scene");
+          
+          this.setupPhase1();
+          
+          this.tempSlider.addEventListener("input", (e) => {
+            if (this.coolingActive) return; 
+            
+            let temp = parseInt(e.target.value);
+            
+            // Halo Térmico mais dramático
+            this.magmaLight.setAttribute("intensity", (temp / 100) * 5); 
+            
+            // A rocha fica avermelhada nas bordas conforme esquenta
+            let shaleEmissive = (temp / 100) * 1.2; 
+            this.kerogenBoxes.forEach(box => {
+              box.setAttribute("material", "emissiveIntensity: " + shaleEmissive);
+            });
+            
+            if (temp >= 85 && !this.crackingActive) {
+              this.startCracking();
+            } else if (temp < 85 && this.crackingActive) {
+              this.stopCracking();
+            }
+          });
+        },
+        
+        setupPhase1: function() {
+          this.hudTitle.innerText = "Fase 1: Diagênese Marinha";
+          this.hudTitle.style.color = "#64ffda";
+          this.hudDesc.innerText = "Matéria orgânica abundante precipitada em ambiente marinho anóxico (Formação Pimenteiras). Toque na tela para iniciar a compactação geológica.";
+          // Luz mais azulada e brilhante para simular fundo do mar raso
+          this.sky.setAttribute("color", "#1a365d");
+          this.ambientLight.setAttribute("color", "#88aadd");
+        },
+        
+        setupPhase2: function() {
+          this.orgParticles.setAttribute("visible", "false");
+          
+          this.kerogenGroups.forEach(group => {
+            group.setAttribute("visible", "true");
+            let currentX = group.getAttribute("position").x;
+            group.setAttribute("position", currentX + " -6 -5");
+            // Animação mais suave (easeOutCubic)
+            group.setAttribute("animation__rise", "property: position; to: " + currentX + " 2.5 -5; dur: 3500; easing: easeOutCubic");
+          });
+          
+          // Escurece o ambiente para focar na rocha (subterrâneo)
+          this.sky.setAttribute("animation__color", "property: color; to: #0a0e17; dur: 2000");
+          this.ambientLight.setAttribute("animation__color", "property: color; to: #333344; dur: 2000");
+          this.dirLight.setAttribute("animation__int", "property: intensity; to: 0.3; dur: 2000");
+          
+          this.hudTitle.innerText = "Fase 2: Folhelho Gerador";
+          this.hudTitle.style.color = "#a0aec0";
+          this.hudDesc.innerText = "A biomassa compactou-se em espessa rocha matriz escura (Querogênio Tipo II). Toque na tela para iniciar o magmatismo profundo da Bacia do Parnaíba.";
+        },
+        
+        setupPhase3: function() {
+          this.hudTitle.innerText = "Fase 3: Intrusão de Dique Magmático";
+          this.hudTitle.style.color = "#ff6b6b";
+          this.hudDesc.innerText = "Uma poderosa intrusão de diabásio rasga a formação. Arraste o termômetro para injetar calor extremo na rocha encaixante.";
+          
+          this.magmaDike.setAttribute("visible", "true");
+          // Emerge um pouco mais devagar
+          this.magmaDike.setAttribute("animation__rise", "property: position; from: 0 -6 -5; to: 0 2.5 -5; dur: 5000; easing: easeOutQuad");
+          
+          setTimeout(() => {
+            this.sliderContainer.style.display = "block";
+          }, 4000);
+        },
+        
+        startCracking: function() {
+          this.crackingActive = true;
+          
+          this.hudTitle.innerText = "Fase 4: Craqueamento Térmico!";
+          this.hudTitle.style.color = "#ffcc00";
+          this.hudDesc.innerText = "Temperatura Crítica! O choque térmico fratura a rocha violentamente, expulsando bolhas de Gás Natural (CH4).";
+          this.arrheniusUI.style.display = "block";
+          
+          this.kerogenGroups.forEach(g => g.setAttribute("visible", "false"));
+          
+          if(!this.fractureGroup) {
+            this.fractureGroup = document.createElement("a-entity");
+            this.sceneEl.appendChild(this.fractureGroup);
+          }
+          this.fractureGroup.setAttribute("visible", "true");
+          
+          if(this.fractureGroup.children.length === 0) {
+            let centers = [-2.2, 2.2];
+            centers.forEach(cx => {
+              // Usando octaedros e dodecaedros misturados para parecerem pedaços reais de pedra quebrada
+              for(let i=0; i<45; i++) {
+                let shape = Math.random() > 0.5 ? "a-dodecahedron" : "a-octahedron";
+                let frag = document.createElement(shape);
+                
+                let offsetX = (Math.random() - 0.5) * 4;
+                let offsetY = (Math.random() - 0.5) * 5;
+                let offsetZ = (Math.random() - 0.5) * 5;
+                
+                let startX = cx + offsetX;
+                let startY = 2.5 + offsetY;
+                let startZ = -5 + offsetZ;
+                
+                frag.setAttribute("position", startX + " " + startY + " " + startZ);
+                frag.setAttribute("radius", Math.random() * 0.45 + 0.15);
+                
+                // Variação sutil na cor dos pedregulhos
+                let shade = Math.floor(40 + Math.random() * 20).toString(16);
+                frag.setAttribute("color", "#" + shade + shade + shade);
+                
+                // Adiciona um pouco de emissão laranja para parecer que estão quentes por dentro
+                frag.setAttribute("material", "roughness: 0.9; emissive: #ff3300; emissiveIntensity: 0.5");
+                
+                let pushDirX = startX > 0 ? startX + Math.random()*2.5 + 1 : startX - Math.random()*2.5 - 1;
+                let pushDirY = startY + Math.random() * 2;
+                let pushDirZ = startZ + (Math.random() - 0.5) * 4;
+                
+                // Animação de explosão mais suave no final (easeOutExpo)
+                frag.setAttribute("animation__pos", "property: position; to: " + pushDirX + " " + pushDirY + " " + pushDirZ + "; dur: " + (700 + Math.random()*800) + "; easing: easeOutExpo");
+                frag.setAttribute("animation__rot", "property: rotation; to: " + (Math.random()*720) + " " + (Math.random()*720) + " " + (Math.random()*720) + "; dur: 1500; easing: easeOutQuad");
+                
+                this.fractureGroup.appendChild(frag);
+              }
+            });
+          }
+          
+          // Erupção de Gás mais bonita (bolhas translúcidas cyan/brancas)
+          if (this.gasInterval) clearInterval(this.gasInterval);
+          this.gasInterval = setInterval(() => {
+            for(let i=0; i<6; i++) {
+              let p = document.createElement("a-sphere");
+              let radius = Math.random() * 0.15 + 0.05;
+              
+              let isLeft = Math.random() > 0.5;
+              let startX = isLeft ? -1.2 - Math.random() * 1.5 : 1.2 + Math.random() * 1.5;
+              let startY = 0 + Math.random() * 4; 
+              let startZ = -5 + (Math.random() - 0.5) * 5;
+              
+              p.setAttribute("radius", radius);
+              p.setAttribute("color", Math.random() > 0.3 ? "#e0f7fa" : "#80deea"); // Tons de gás/metano mais bonitos
+              p.setAttribute("material", "shader: standard; roughness: 0.1; metalness: 0.2; transparent: true; opacity: 0.85");
+              p.setAttribute("position", startX + " " + startY + " " + startZ);
+              
+              this.gasContainer.appendChild(p);
+              
+              let endX = startX + (Math.random() - 0.5) * 3;
+              let endY = startY + 5 + Math.random() * 5; 
+              
+              // Curva suave para a subida do gás
+              p.setAttribute("animation__pos", "property: position; to: " + endX + " " + endY + " " + startZ + "; dur: " + (1800 + Math.random()*1200) + "; easing: easeInSine");
+              p.setAttribute("animation__op", "property: material.opacity; to: 0; dur: 1800; easing: easeInQuad");
+              p.setAttribute("animation__scale", "property: scale; to: 1.5 1.5 1.5; dur: 1800"); // Expande ao subir
+              
+              setTimeout(() => {
+                if (p && p.parentNode) p.parentNode.removeChild(p);
+              }, 2200);
+            }
+          }, 35);
+          
+          this.climaxTimeout = setTimeout(() => {
+            this.startCooling();
+          }, 4500);
+        },
+
+        stopCracking: function() {
+          this.crackingActive = false;
+          clearTimeout(this.climaxTimeout);
+          
+          this.kerogenGroups.forEach(g => g.setAttribute("visible", "true"));
+          if(this.fractureGroup) {
+            this.fractureGroup.setAttribute("visible", "false");
+            while(this.fractureGroup.firstChild) {
+               this.fractureGroup.removeChild(this.fractureGroup.firstChild);
+            }
+          }
+          
+          if (this.gasInterval) {
+            clearInterval(this.gasInterval);
+            this.gasInterval = null;
+          }
+          
+          this.hudTitle.innerText = "Fase 3: Intrusão de Dique Magmático";
+          this.hudTitle.style.color = "#ff6b6b";
+          this.hudDesc.innerText = "Calor insuficiente. Mantenha no máximo para concluir a reação de craqueamento térmico.";
+          this.arrheniusUI.style.display = "none";
+        },
+        
+        startCooling: function() {
+          this.coolingActive = true;
+          this.crackingActive = false;
+          
+          this.tempSlider.disabled = true;
+          this.arrheniusUI.style.display = "none";
+          
+          if (this.gasInterval) {
+            clearInterval(this.gasInterval);
+            this.gasInterval = null;
+          }
+          
+          this.hudTitle.innerText = "Fase Final: Diabásio e Grafite Inerte";
+          this.hudTitle.style.color = "#9e9e9e";
+          this.hudDesc.innerText = "O sistema resfriou. O magma formou uma rocha ígnea intrusiva (Diabásio). O que restou do folhelho é apenas carbono inerte (sobrematurado).";
+          
+          // Magma vira pedra
+          this.magmaDike.removeAttribute("material");
+          this.magmaDike.setAttribute("material", "color: #1a1a24; roughness: 0.95; metalness: 0.1"); // Tom levemente azulado escuro para o diabásio
+          this.magmaLight.setAttribute("animation__dim", "property: intensity; to: 0.05; dur: 5000");
+          
+          // Esfria os fragmentos (perdem a emissão)
+          if(this.fractureGroup) {
+            Array.from(this.fractureGroup.children).forEach(frag => {
+              frag.setAttribute("animation__cool_color", "property: material.color; type: color; to: #111111; dur: 5000");
+              frag.setAttribute("animation__cool_emissive", "property: material.emissiveIntensity; to: 0; dur: 4000");
+            });
+          }
+        },
+        
+        nextPhase: function (evt) {
+          if (evt && evt.target && evt.target.tagName && evt.target.tagName.toLowerCase() === "input") return;
+          
+          if (this.phase === 1) {
+            this.phase = 2;
+            this.setupPhase2();
+          } else if (this.phase === 2) {
+            this.phase = 3;
+            this.setupPhase3();
+          }
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <!-- HUD Overlay HTML -->
+    <div id="hud-container">
+      <h2 id="hud-title"></h2>
+      <p id="hud-desc"></p>
+    </div>
+
+    <!-- Formula Científica Cinética -->
+    <div id="arrhenius-ui">
+      k = A &middot; e<sup>-Ea/RT</sup>
+    </div>
+
+    <!-- Controle Interativo de Calor -->
+    <div id="slider-container">
+      <label for="temp-slider">Temperatura Magmática</label>
+      <input type="range" id="temp-slider" min="0" max="100" value="0">
+    </div>
+
+    <!-- Cena 3D A-Frame -->
+    <a-scene renderer="colorManagement: true; antialias: true; physicallyCorrectLights: true" cursor="rayOrigin: mouse">
+
+      <!-- Ambiente de Fundo - Cor inicial oceânica, vai escurecer na Fase 2 -->
+      <a-sky color="#1a365d"></a-sky>
+      
+      <!-- Câmera com leve inclinação para visualização mais cinematográfica -->
+      <a-camera position="0 3 7" rotation="-10 0 0" look-controls="pointerLockEnabled: false"></a-camera>
+
+      <a-entity story-manager></a-entity>
+
+      <!-- FASE 1: Partículas Orgânicas -->
+      <a-entity id="organic-system" organic-particles></a-entity>
+
+      <!-- FASE 2 a 5: Formação Redimensionada de Folhelho com Geometrias Mais Elegantes -->
+      <!-- Usa bordas arredondadas (fillet) não nativas, então usaremos a-box com subdivisões para a luz bater melhor -->
+      <!-- Paredão Esquerdo -->
+      <a-entity class="shale-group" position="-2.2 2.5 -5" visible="false">
+        <a-box class="kerogen-box" width="3.8" height="5.5" depth="5.5" segments-width="2" segments-height="2"
+               material="color: #2a2a2a; emissive: #ff2200; emissiveIntensity: 0; roughness: 0.8; metalness: 0.1"></a-box>
+      </a-entity>
+      
+      <!-- Paredão Direito -->
+      <a-entity class="shale-group" position="2.2 2.5 -5" visible="false">
+        <a-box class="kerogen-box" width="3.8" height="5.5" depth="5.5" segments-width="2" segments-height="2"
+               material="color: #2a2a2a; emissive: #ff2200; emissiveIntensity: 0; roughness: 0.8; metalness: 0.1"></a-box>
+      </a-entity>
+
+      <!-- FASE 3: Intrusão Magmática Animada com Shader (Lava) -->
+      <!-- Preenche a fenda (X: -0.4 a 0.4) com um pouco mais de volume visual -->
+      <a-box id="magma-dike" position="0 -6 -5" width="0.75" height="5.6" depth="5.6" visible="false"
+             material="shader: magma; color1: #ff1100; color2: #ffaa00">
+        <!-- Luz pontual do magma -->
+        <a-light id="magma-light" type="point" position="0 0 3" color="#ff4500" intensity="0" distance="15"></a-light>
+      </a-box>
+
+      <!-- FASE 4: Recipiente Dinâmico de Explosão de Gás Natural -->
+      <a-entity id="gas-container"></a-entity>
+
+      <!-- Cenário Base Visível (Chão) - Tom de argila agradável e levemente especular -->
+      <a-plane position="0 0 -5" rotation="-90 0 0" width="25" height="25" 
+               material="color: #4a332a; roughness: 0.9; metalness: 0.05"></a-plane>
+               
+      <!-- Iluminação Global Melhorada -->
+      <a-light id="ambient-light" type="ambient" color="#88aadd" intensity="0.8"></a-light>
+      <!-- Luz direcional principal, projetando sombras sutis simuladas pelo shading -->
+      <a-light id="dir-light" type="directional" position="3 10 5" color="#ffffff" intensity="0.7"></a-light>
+      <!-- Luz de preenchimento fraca para dar volume às caixas escuras -->
+      <a-light type="directional" position="-5 5 -2" color="#aabbff" intensity="0.2"></a-light>
+    </a-scene>
+  </body>
+</html>
+
