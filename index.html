@@ -71,6 +71,23 @@
       }
       input[type=range]:focus { outline: none; }
       @keyframes fadeInSlider { from { opacity: 0; transform: translate(-50%, 30px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+      /* Botoes Superiores */
+      .top-btn {
+        position: absolute; top: 20px;
+        background: rgba(10, 15, 25, 0.7);
+        border: 1px solid rgba(74, 144, 226, 0.4);
+        color: #64ffda; padding: 12px 18px; border-radius: 12px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 14px; font-weight: 600; cursor: pointer;
+        z-index: 1100; backdrop-filter: blur(8px);
+        text-transform: uppercase; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        transition: all 0.3s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .top-btn:active { transform: scale(0.95); }
+      #btn-back { left: 20px; }
+      #btn-gyro { right: 20px; }
     </style>
     
     <script>
@@ -196,6 +213,26 @@
           this.ambientLight = document.querySelector("#ambient-light");
           this.dirLight = document.querySelector("#dir-light");
           this.sceneEl = document.querySelector("a-scene");
+          
+          // Setup dos Botoes
+          const btnBack = document.getElementById("btn-back");
+          const backHandler = (e) => { e.stopPropagation(); this.previousPhase(); };
+          btnBack.addEventListener("click", backHandler);
+          btnBack.addEventListener("touchstart", backHandler, {passive: false});
+
+          const btnGyro = document.getElementById("btn-gyro");
+          const cameraEl = document.querySelector("a-camera");
+          const toggleGyro = (e) => {
+            e.stopPropagation();
+            let lookControls = cameraEl.components["look-controls"];
+            if (lookControls) {
+              let isEnabled = lookControls.data.magicWindowTrackingEnabled;
+              cameraEl.setAttribute("look-controls", "magicWindowTrackingEnabled", !isEnabled);
+              btnGyro.innerText = !isEnabled ? "Desativar Visão 360" : "Ativar Visão 360";
+            }
+          };
+          btnGyro.addEventListener("click", toggleGyro);
+          btnGyro.addEventListener("touchstart", toggleGyro, {passive: false});
           
           this.setupPhase1();
           
@@ -411,8 +448,88 @@
           }
         },
         
+        previousPhase: function() {
+          if (this.phase === 3 && (this.coolingActive || this.crackingActive || this.tempSlider.value > 0)) {
+            // Volta da Fase 4/Final para Fase 3
+            this.coolingActive = false;
+            this.crackingActive = false;
+            clearTimeout(this.climaxTimeout);
+            
+            if (this.gasInterval) {
+              clearInterval(this.gasInterval);
+              this.gasInterval = null;
+            }
+            this.arrheniusUI.style.display = "none";
+            
+            if (this.fractureGroup) {
+              this.fractureGroup.setAttribute("visible", "false");
+              while(this.fractureGroup.firstChild) {
+                 this.fractureGroup.removeChild(this.fractureGroup.firstChild);
+              }
+            }
+            this.kerogenGroups.forEach(g => g.setAttribute("visible", "true"));
+            
+            this.tempSlider.disabled = false;
+            this.tempSlider.value = 0;
+            
+            this.magmaLight.setAttribute("intensity", 0);
+            this.magmaLight.removeAttribute("animation__dim");
+            
+            this.kerogenBoxes.forEach(box => {
+              box.setAttribute("material", "emissiveIntensity: 0");
+            });
+            
+            this.magmaDike.setAttribute("material", "shader: magma; color1: #ff1100; color2: #ffaa00");
+            
+            this.hudTitle.innerText = "Fase 3: Intrusão de Dique Magmático";
+            this.hudTitle.style.color = "#ff6b6b";
+            this.hudDesc.innerText = "Uma poderosa intrusão de diabásio rasga a formação. Arraste o termômetro para injetar calor extremo na rocha encaixante.";
+            
+            this.sliderContainer.style.display = "block";
+            
+          } else if (this.phase === 3) {
+            // Volta da Fase 3 para Fase 2
+            this.phase = 2;
+            this.sliderContainer.style.display = "none";
+            
+            this.magmaDike.setAttribute("visible", "false");
+            this.magmaDike.removeAttribute("animation__rise");
+            this.magmaDike.setAttribute("position", "0 -6 -5");
+            
+            this.hudTitle.innerText = "Fase 2: Folhelho Gerador";
+            this.hudTitle.style.color = "#a0aec0";
+            this.hudDesc.innerText = "A biomassa compactou-se em espessa rocha matriz escura (Querogênio Tipo II). Toque na tela para iniciar o magmatismo profundo da Bacia do Parnaíba.";
+            
+          } else if (this.phase === 2) {
+            // Volta da Fase 2 para Fase 1
+            this.phase = 1;
+            
+            this.kerogenGroups.forEach(group => {
+              group.setAttribute("visible", "false");
+              group.removeAttribute("animation__rise");
+            });
+            
+            this.orgParticles.setAttribute("visible", "true");
+            
+            this.sky.removeAttribute("animation__color");
+            this.ambientLight.removeAttribute("animation__color");
+            this.dirLight.removeAttribute("animation__int");
+            
+            this.sky.setAttribute("color", "#1a365d");
+            this.ambientLight.setAttribute("color", "#88aadd");
+            this.dirLight.setAttribute("intensity", "0.7");
+            
+            this.hudTitle.innerText = "Fase 1: Diagênese Marinha";
+            this.hudTitle.style.color = "#64ffda";
+            this.hudDesc.innerText = "Matéria orgânica abundante precipitada em ambiente marinho anóxico (Formação Pimenteiras). Toque na tela para iniciar a compactação geológica.";
+          }
+        },
+        
         nextPhase: function (evt) {
-          if (evt && evt.target && evt.target.tagName && evt.target.tagName.toLowerCase() === "input") return;
+          if (evt && evt.target && evt.target.tagName) {
+            const tag = evt.target.tagName.toLowerCase();
+            if (tag === "input" || tag === "button") return;
+          }
           
           if (this.phase === 1) {
             this.phase = 2;
@@ -426,6 +543,10 @@
     </script>
   </head>
   <body>
+    <!-- Controles de Câmera e Fase -->
+    <button id="btn-back" class="top-btn" aria-label="Voltar Fase">⬅ Voltar Fase</button>
+    <button id="btn-gyro" class="top-btn" aria-label="Ativar Visão 360">Ativar Visão 360</button>
+
     <!-- HUD Overlay HTML -->
     <div id="hud-container">
       <h2 id="hud-title"></h2>
@@ -450,7 +571,7 @@
       <a-sky color="#1a365d"></a-sky>
       
       <!-- Câmera com leve inclinação para visualização mais cinematográfica -->
-      <a-camera position="0 3 7" rotation="-10 0 0" look-controls="pointerLockEnabled: false"></a-camera>
+      <a-camera position="0 3 7" rotation="-10 0 0" look-controls="pointerLockEnabled: false; magicWindowTrackingEnabled: false"></a-camera>
 
       <a-entity story-manager></a-entity>
 
@@ -495,4 +616,3 @@
     </a-scene>
   </body>
 </html>
-
